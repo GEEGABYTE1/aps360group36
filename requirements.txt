@@ -1,0 +1,4 @@
+asgiref==3.7.2
+channels==4.0.0
+Django==4.2.7
+daphne
