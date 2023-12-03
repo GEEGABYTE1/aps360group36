@@ -1,4 +1,4 @@
-# Nova Mission Operations Back-End
+# NOVA Mission Operations Back-End
 
 The back-end for NOVA mission control/operations. This project uses the Django framework. Note: At the moment of writing, this repository is very incomplete, and should only be treated as a testing playground.
 
