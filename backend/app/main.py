@@ -1,5 +1,4 @@
 import asyncio
-import random
 import json
 from datetime import timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
@@ -9,6 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from data_file import data_store
 from html_generator import generate_html
 from auth import authenticate_user, create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+from dummy_pi import generate_sensor_data, handle_comand
 
 app = FastAPI()
 
@@ -45,9 +45,8 @@ async def websocket_endpoint(websocket: WebSocket):
     user = await get_current_user(token)
     try:
         while True:
-            # Simulate random sensor data update every second
-            for sensor in data_store["sensors"]:
-                sensor["value"] = round(random.uniform(0.0, 100.0), 2)
+            # Generate new data
+            await generate_sensor_data()
 
             # Send the current sensor data and actuator status
             data = {
@@ -62,11 +61,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 command = json.loads(message)
 
                 # Handle actuator toggling
-                if command.get("action") == "toggle":
-                    for actuator in data_store["actuators"]:
-                        if actuator["name"] == command["name"]:
-                            actuator["status"] = "on" if actuator["status"] == "off" else "off"
-                            break
+                await handle_comand(command)
 
             except asyncio.TimeoutError:
                 # Continue sending sensor updates if no command is received
