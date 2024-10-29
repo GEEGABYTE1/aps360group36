@@ -46,7 +46,8 @@ async def get_actuator_data():
             await generate_sensor_data()
             data = {
                 "sensors": data_store["sensors"],
-                "actuators": data_store["actuators"]
+                "actuators": data_store["actuators"],
+                "timestamp":data_store["timestamp"]
             }
             return data 
     except:
