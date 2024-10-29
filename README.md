@@ -17,7 +17,6 @@ TBD
 ├── docker-compose.yml              # Defines services and configurations for running Docker containers
 ├── Dockerfile                      # Docker instructions for building the FastAPI app image
 └── README.md                       # This README file
-Description of Key Files
 ```
 
 
@@ -30,7 +29,7 @@ To run this project, you will need Docker and Docker Compose installed on your m
 1. **Clone the Repository**
    ```bash
    git clone https://github.com/UTATRocketry/novaOps-back.git
-   cd novaOps-back
+   cd /path/to/novaOps-back
    ```
 
 2. **Build and Run the Docker Containers**
@@ -44,8 +43,25 @@ To run this project, you will need Docker and Docker Compose installed on your m
 4. **Stopping the Application**
    To stop the application, run:
     ```bash
-   docker-compose down
+   sudo docker-compose down
    ```
+
+## To setup a Raspberry Pi with the Config Scripts
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/UTATRocketry/novaOps-back.git
+   cd novaOps-back
+   ```
+2. **Update Log File Path**
+Update line 4 `exec > /path/to/nova/session.log 2>&1` of the `initial_config.sh` file, so that the file path is accurate
+
+3. **Make the scripts executable**
+```bash
+chmod +x /path/to/nova/initial_config.sh
+chmod +x /path/to/nova/post_reboot_config.sh
+```
+4. **Run the scripts**
+Run `initial_config.sh` wait for it to reboot the Pi and then run `post_reboot_config.sh`. This will start the server on `192.68`. Use `sudo docker-compose down` to stop and `sudo docker-compose up` to run again.
 
 ## Important Notes
 

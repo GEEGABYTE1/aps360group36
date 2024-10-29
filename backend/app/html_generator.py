@@ -8,6 +8,7 @@ def generate_html(data_store):
         "name": "{sensor['name']}",
         "type": "{sensor['type']}",
         "value": <span id="{sensor['name']}_value">{sensor['value']}</span>
+        "timestamp": <span id="{sensor['name']}_timestamp">{data_store["timestamp"]}</span>
     }}</span></pre>
         """
 
@@ -19,6 +20,7 @@ def generate_html(data_store):
         "name": "{actuator['name']}",
         "type": "{actuator['type']}",
         "status": <span id="{actuator['name']}_status">{actuator['status']}</span>
+        "timestamp": <span id="{actuator['name']}_timestamp">{data_store["timestamp"]}</span>
     }}</span></pre>
             <button id="{actuator['name']}_button" onclick="toggleActuator('{actuator['name']}')" style="background-color: lightgrey;">
                 Toggle
@@ -93,28 +95,37 @@ def generate_html(data_store):
                 }}
 
                 function connectWebSocket(token) {{
-                    ws = new WebSocket("ws://localhost:8000/ws?token=" + token);
+                    ws = new WebSocket(`ws://${{window.location.hostname}}:8000/ws?token=${{token}}`);
 
                     ws.onmessage = function(event) {{
                         const data = JSON.parse(event.data);
                         const sensors = data.sensors;
                         const actuators = data.actuators;
+                        const timestamp = data.timestamp;
 
                         // Update sensor values
                         sensors.forEach(sensor => {{
-                            const element = document.getElementById(sensor.name + "_value");
-                            if (element) {{
-                                element.textContent = sensor.value;
+                            const valueElement = document.getElementById(sensor.name + "_value");
+                            const timestampElement = document.getElementById(sensor.name + "_timestamp");
+                            if (valueElement) {{
+                                valueElement.textContent = sensor.value;
+                            }}
+                            if (timestampElement) {{
+                                timestampElement.textContent = data.timestamp;
                             }}
                         }});
 
                         // Update actuator status and button color
                         actuators.forEach(actuator => {{
                             const statusElement = document.getElementById(actuator.name + "_status");
+                            const timestampElement = document.getElementById(actuator.name + "_timestamp");
                             const buttonElement = document.getElementById(actuator.name + "_button");
 
                             if (statusElement) {{
                                 statusElement.textContent = actuator.status;
+                            }}
+                            if (timestampElement) {{
+                                timestampElement.textContent = data.timestamp;
                             }}
                             if (buttonElement) {{
                                 buttonElement.style.backgroundColor = actuator.status === "on" ? "darkgrey" : "lightgrey";

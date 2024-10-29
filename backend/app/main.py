@@ -8,14 +8,14 @@ from fastapi.security import OAuth2PasswordRequestForm
 from data_file import data_store
 from html_generator import generate_html
 from auth import authenticate_user, create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
-from dummy_pi import generate_sensor_data, handle_comand
+from dummy_pi import get_timestamp, generate_sensor_data, handle_comand
 
 app = FastAPI()
 
 # Allow CORS for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_origins=["*"],  # To allow all --> allow_origins=["*"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,13 +45,13 @@ async def websocket_endpoint(websocket: WebSocket):
     user = await get_current_user(token)
     try:
         while True:
-            # Generate new data
             await generate_sensor_data()
-
+            await get_timestamp()
             # Send the current sensor data and actuator status
             data = {
                 "sensors": data_store["sensors"],
-                "actuators": data_store["actuators"]
+                "actuators": data_store["actuators"],
+                "timestamp":data_store["timestamp"]
             }
             await websocket.send_text(json.dumps(data))
 
