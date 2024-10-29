@@ -34,6 +34,23 @@ async def get_token_from_websocket(websocket: WebSocket):
 async def get():
     return HTMLResponse(generate_html(data_store))
 
+@app.get("/entry")                 # Temporary route for testing for frontend and backend integration
+async def websocket_test_entrpoint():
+    
+    return {"message": "Hello World from Backend!"}
+        
+@app.get("/ws_front")
+async def get_actuator_data():
+    try:
+        while True:
+            await generate_sensor_data()
+            data = {
+                "sensors": data_store["sensors"],
+                "actuators": data_store["actuators"]
+            }
+            return data 
+    except:
+        return {} 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
