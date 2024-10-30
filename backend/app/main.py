@@ -44,6 +44,7 @@ async def get_actuator_data():
     try:
         while True:
             await generate_sensor_data()
+            await get_timestamp()
             data = {
                 "sensors": data_store["sensors"],
                 "actuators": data_store["actuators"],
