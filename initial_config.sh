@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Save a log of all commands and their output
-
-
 # Update and upgrade the system
 echo "Updating system..."
 sudo apt update && sudo apt upgrade -y
