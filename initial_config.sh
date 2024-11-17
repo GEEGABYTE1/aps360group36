@@ -13,7 +13,7 @@ sudo apt install -y dnsmasq docker-compose
 echo "Backing up Files..."
 sudo cp /etc/dhcpcd.conf /etc/dhcpcd.conf.v1
 
-# Install dhcpcd5
+# Install dhcpcd5 and desktop ui
 echo "Installing packages..."
 sudo apt install dhcpcd5 --fix-missing
 sudo apt install --reinstall raspberrypi-ui-mods
