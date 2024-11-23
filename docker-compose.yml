@@ -1,9 +1,9 @@
-version: '3.8'
+version: '3.3'
 
 services:
   backend:
     build:
-      context: ./novaOps-back/backend
+      context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -12,16 +12,3 @@ services:
       - ./backend/app:/app
     environment:
       - PYTHONPATH=/app
-  frontend:
-    build:
-        context: ./novaOPS-front/frontend
-        dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-    depends_on:
-      - backend
