@@ -95,9 +95,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.post("/command")
-async def send_command(command: dict):
+async def send_command(command):
     try:
-        mqtt.mqtt_client.publish(mqtt.COMMAND_TOPIC, json.dumps(command))
+        mqtt.mqtt_client.publish(mqtt.COMMAND_TOPIC, command)
         return {"status": "Command sent"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

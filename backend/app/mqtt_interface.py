@@ -4,10 +4,10 @@ import json
 from datetime import datetime
 import asyncio
 
-MQTT_BROKER = "broker.hivemq.com"
+MQTT_BROKER = "mqtt://localhost:1883"
 MQTT_PORT = 1883 # TCP Port
-DATA_TOPIC = "sensor_data"
-COMMAND_TOPIC = "actuator_command"
+DATA_TOPIC = "novaground/telemetry"
+COMMAND_TOPIC = "novaground/command"
 
 data_store = {"sensors": [], "actuators": []}
 
