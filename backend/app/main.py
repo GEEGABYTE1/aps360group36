@@ -5,8 +5,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPExcept
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from data_file import data_store
-from html_generator import generate_html
+import backend.app.mqtt_interface as mqtt
+import data_file
+from html_generator import generate_html, new_html
 from auth import authenticate_user, create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 from dummy_pi import get_timestamp, generate_sensor_data, handle_comand
 
@@ -32,27 +33,33 @@ async def get_token_from_websocket(websocket: WebSocket):
 
 @app.get("/")
 async def get():
-    return HTMLResponse(generate_html(data_store))
+    return HTMLResponse(new_html)
 
 @app.get("/entry")                 # Temporary route for testing for frontend and backend integration
-async def websocket_test_entrpoint():
-    
+async def basic_test_endpoint():
     return {"message": "Hello World from Backend!"}
-        
-@app.get("/ws_front")
+
+@app.get("/raw_data")
+async def data_test_endpoint():
+    return {"data" : mqtt.data_store}  
+
+@app.get("/front")
 async def get_actuator_data():
     try:
         while True:
-            await generate_sensor_data()
-            await get_timestamp()
-            data = {
-                "sensors": data_store["sensors"],
-                "actuators": data_store["actuators"],
-                "timestamp":data_store["timestamp"]
-            }
-            return data 
+            #await generate_sensor_data()
+            #await get_timestamp()
+            return mqtt.data_store 
     except:
         return {} 
+
+@app.websocket("/ws_basic")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        #await mqtt.generate_sensor_data()
+        await websocket.send_json(mqtt.data_store)
+        await asyncio.sleep(0.0000001)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -66,13 +73,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             await generate_sensor_data()
             await get_timestamp()
-            # Send the current sensor data and actuator status
-            data = {
-                "sensors": data_store["sensors"],
-                "actuators": data_store["actuators"],
-                "timestamp":data_store["timestamp"]
-            }
-            await websocket.send_text(json.dumps(data))
+            await websocket.send_text(json.dumps(data_file.data_store))
 
             # Check if any commands are received
             try:
@@ -91,6 +92,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print(f"Client {user['username']} disconnected")
+
+
+@app.post("/command")
+async def send_command(command: dict):
+    try:
+        mqtt.mqtt_client.publish(mqtt.COMMAND_TOPIC, json.dumps(command))
+        return {"status": "Command sent"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Token route for login
 @app.post("/token")
