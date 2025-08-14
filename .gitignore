@@ -1,0 +1,10 @@
+notes.md 
+svm_baseline_math_starter/data/crohme2019/*
+svm_baseline_math_starter/data/test/pngs/*
+svm_baseline_math_starter/data/valid/pngs/*
+svm_baseline_math_starter/data/train/pngs/*
+transformer/data/crohme2019/*
+transformer/data/test/pngs/*
+transformer/data/valid/pngs/*
+transformer/data/train/pngs/*
+lstmdecoder/_downloads/*
