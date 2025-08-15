@@ -8,11 +8,13 @@ import math
 from torch.utils.data import DataLoader
 from dataclasses import dataclass
 from typing import Optional, List
+from matplotlib import pyplot as plt
 import os 
 # from .config import Config
 import json
 from torchvision import transforms
 
+import torch.optim as optim
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
@@ -202,6 +204,92 @@ class CNNTransformer(nn.Module):
 
 # Build vocab from all labels, change this to the crohme2019 labels. 
 
+def train(model, train_loader, val_loader, tokenizer, num_epochs=10, lr=1e-4):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id)
+    train_losses, val_losses = [], []
+    train_accuracies, val_accuracies = [], []
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        total_correct = 0
+        total_tokens = 0
+        for imgs, token_ids in train_loader:
+            imgs = imgs.to(device)
+            token_ids = token_ids.to(device)
+            tgt_in = torch.full((token_ids.size(0), 1), tokenizer.bos_id, dtype=torch.long, device=device)
+            tgt_in = torch.cat([tgt_in, token_ids[:, :-1]], dim=1)
+            tgt_in = tgt_in.transpose(0, 1)
+            tgt_out = token_ids.transpose(0, 1)
+            optimizer.zero_grad()
+            logits = model(imgs, tgt_in)
+            loss = criterion(logits.reshape(-1, logits.size(-1)), tgt_out.reshape(-1))
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            # Train accuracy
+            preds = logits.argmax(-1)
+            mask = (tgt_out != tokenizer.pad_id)
+            correct = (preds == tgt_out) & mask
+            total_correct += correct.sum().item()
+            total_tokens += mask.sum().item()
+        avg_loss = total_loss / len(train_loader)
+        train_acc = total_correct / total_tokens if total_tokens > 0 else 0
+        train_losses.append(avg_loss)
+        train_accuracies.append(train_acc)
+
+        # Validation
+        if 'val_loader' in locals():
+            val_loss, val_acc = evaluate(model, val_loader, tokenizer, criterion, device)
+            val_losses.append(val_loss)
+            val_accuracies.append(val_acc)
+            print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_loss:.4f} Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}")
+        else:
+            print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_loss:.4f} Acc: {train_acc:.4f}")
+    plt.figure(figsize=(12,5))
+    plt.subplot(1,2,1)
+    plt.plot(train_losses, label='Train Loss')
+    if val_losses: plt.plot(val_losses, label='Val Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.subplot(1,2,2)
+    plt.plot(train_accuracies, label='Train Acc')
+    if val_accuracies: plt.plot(val_accuracies, label='Val Acc')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    return model 
+
+def evaluate(model, loader, tokenizer, criterion, device):
+    model.eval()
+    total_loss = 0
+    total_correct = 0
+    total_tokens = 0
+    with torch.no_grad():
+        for imgs, token_ids in loader:
+            imgs = imgs.to(device)
+            token_ids = token_ids.to(device)
+            tgt_in = torch.full((token_ids.size(0), 1), tokenizer.bos_id, dtype=torch.long, device=device)
+            tgt_in = torch.cat([tgt_in, token_ids[:, :-1]], dim=1)
+            tgt_in = tgt_in.transpose(0, 1)
+            tgt_out = token_ids.transpose(0, 1)
+            logits = model(imgs, tgt_in)
+            loss = criterion(logits.reshape(-1, logits.size(-1)), tgt_out.reshape(-1))
+            total_loss += loss.item()
+            # Accuracy (token-level, ignoring pad)
+            preds = logits.argmax(-1)
+            mask = (tgt_out != tokenizer.pad_id)
+            correct = (preds == tgt_out) & mask
+            total_correct += correct.sum().item()
+            total_tokens += mask.sum().item()
+    avg_loss = total_loss / len(loader)
+    accuracy = total_correct / total_tokens if total_tokens > 0 else 0
+    return avg_loss, accuracy
+
 if __name__ == "__main__":
     inkml_dir = "transformer/data/crohme2019"  # adjust as needed
     vocab = build_vocab(inkml_dir)
@@ -221,12 +309,33 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    dataset = MathExprDataset(
-        img_dir=['transformer/data/test/pngs', 'transformer/data/valid/pngs', 'transformer/data/train/pngs'],
-        inkml_dir='transformer/data/inkml',
+    train_dataset = MathExprDataset(
+        img_dir=['transformer/data/train/pngs'],
+        inkml_dir='transformer/data/crohme2019/train',
+        tokenizer=tokenizer,
+        transform=transform
+    )
+    val_dataset = MathExprDataset(
+        img_dir=['transformer/data/valid/pngs'],
+        inkml_dir='transformer/data/crohme2019/valid',
+        tokenizer=tokenizer,
+        transform=transform
+    )
+    test_dataset = MathExprDataset(
+        img_dir=['transformer/data/test/pngs'],
+        inkml_dir='transformer/data/crohme2019/test',
         tokenizer=tokenizer,
         transform=transform
     )
 
 
-    loader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=None)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=None)
+
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, collate_fn=None)
+
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True, collate_fn=None)
+
+    model = CNNTransformer(len(tokenizer))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model = train(model, train_loader, val_loader, tokenizer, num_epochs=10, lr=1e-4)
