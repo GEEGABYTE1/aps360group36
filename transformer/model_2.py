@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from dataclasses import dataclass
 from typing import Optional, List
 import os 
-from .config import Config
+# from .config import Config
 import json
 from torchvision import transforms
 
@@ -96,7 +96,7 @@ def _center(box):
     y1,x1,y2,x2 = box
     return ( (y1+y2)/2.0, (x1+x2)/2.0 ), (y2-y1, x2-x1)
 
-def reconstruct(preds_for_image, cfg: Config = Config()):
+""" def reconstruct(preds_for_image, cfg: Config = Config()):
     # Very simple greedy reconstruction: LEFT->RIGHT with super/sub attachment
     # preds_for_image: list of dicts with keys "bbox", "label"
     # returns LaTeX string
@@ -131,32 +131,37 @@ def reconstruct(preds_for_image, cfg: Config = Config()):
             out += f"{base}_{{{sub}}} "
         else:
             out += f"{base} "
-    return out.strip()
+    return out.strip() """
 
 class MathExprDataset(Dataset):
-    def __init__(self, img_dir, label_file, tokenizer, spatial_to_latex=None, transform=None):
-        import json, os
+    def __init__(self, img_dir, inkml_dir, tokenizer, transform=None):
+        import os
         self.img_dir = img_dir
+        self.inkml_dir = inkml_dir
         self.transform = transform
         self.tokenizer = tokenizer
-        self.spatial_to_latex = spatial_to_latex
-        with open(label_file, 'r', encoding='utf-8') as f:
-            self.labels = json.load(f)
-        self.img_names = list(self.labels.keys())
+        # List all PNG images
+        self.img_names = [] 
+        for dir in img_dir:
+            self.img_dir_name = [f for f in os.listdir(dir) if f.endswith('.png')]
+            self.img_names.extend(self.img_dir_name)
     def __len__(self):
         return len(self.img_names)
     def __getitem__(self, idx):
+        import os
+        from latex_extraction import extract_latex_from_inkml
         img_name = self.img_names[idx]
         img_path = os.path.join(self.img_dir, img_name)
         img = Image.open(img_path).convert("L")
         if self.transform:
             img = self.transform(img)
-        label = self.labels[img_name]
-        if self.spatial_to_latex:
-            label = self.spatial_to_latex(label)
+        # Find corresponding .inkml file
+        base = os.path.splitext(img_name)[0]
+        inkml_path = os.path.join(self.inkml_dir, base + '.inkml')
+        label = extract_latex_from_inkml(inkml_path)
         token_ids = self.tokenizer.encode(label)
         return img, torch.tensor(token_ids, dtype=torch.long)
-
+    
 class CNNEncoder(nn.Module):
     def __init__(self, out_dim=512):
         super().__init__()
@@ -217,10 +222,9 @@ if __name__ == "__main__":
     ])
 
     dataset = MathExprDataset(
-        img_dir='transformer/data/images',
-        label_file='transformer/data/labels.json',
+        img_dir=['transformer/data/test/pngs', 'transformer/data/valid/pngs', 'transformer/data/train/pngs'],
+        inkml_dir='transformer/data/inkml',
         tokenizer=tokenizer,
-        spatial_to_latex=reconstruct,  # or None if labels are already LaTeX
         transform=transform
     )
 
