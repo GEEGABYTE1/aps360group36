@@ -1,7 +1,5 @@
 """
 CNN + Transformer Encoder-Decoder for InkML→LaTeX
-Standalone file: ResNet-18 backbone → Transformer Encoder (over spatial tokens)
-→ Transformer Decoder (token generator). Includes a tiny test harness.
 """
 from __future__ import annotations
 import math
@@ -12,7 +10,7 @@ from matplotlib import pyplot as plt
 import os 
 # from .config import Config
 import json
-from torchvision import transforms
+from torchvision import transforms, models 
 
 import torch.optim as optim
 import torch
@@ -143,10 +141,7 @@ class MathExprDataset(Dataset):
         self.transform = transform
         self.tokenizer = tokenizer
         # List all PNG images
-        self.img_names = [] 
-        for dir in img_dir:
-            self.img_dir_name = [f for f in os.listdir(dir) if f.endswith('.png')]
-            self.img_names.extend(self.img_dir_name)
+        self.img_names = [f for f in os.listdir(self.img_dir) if f.endswith('.png')]
     def __len__(self):
         return len(self.img_names)
     def __getitem__(self, idx):
@@ -167,40 +162,56 @@ class MathExprDataset(Dataset):
 class CNNEncoder(nn.Module):
     def __init__(self, out_dim=512):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 2, 1), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, 2, 1), nn.ReLU(),
-            nn.Conv2d(64, out_dim, 3, 2, 1), nn.ReLU()
-        )
+        # Load pretrained ResNet-18
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        # Change first conv layer to accept 1 channel (grayscale)
+        resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        # Remove the fully connected layer and avgpool
+        self.feature_extractor = nn.Sequential(*list(resnet.children())[:-2])  # output: [B, 512, H', W']
+        # Optionally, add a 1x1 conv to change channel dim if needed
+        self.out_proj = nn.Conv2d(512, out_dim, kernel_size=1) if out_dim != 512 else nn.Identity()
+
     def forward(self, x):
-        # x: [B,1,H,W] → [B, out_dim, H', W']
-        return self.conv(x)
+        x = self.feature_extractor(x)
+        x = self.out_proj(x)
+        return x  # [B, out_dim, H', W']
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=4):
+    def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=4, max_seq_len=512):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
-        self.pos = nn.Parameter(torch.zeros(1, 512, d_model))
+        self.pos = nn.Parameter(torch.zeros(max_seq_len, d_model))  # [max_seq_len, d_model]
         decoder_layer = nn.TransformerDecoderLayer(d_model, nhead)
         self.transformer = nn.TransformerDecoder(decoder_layer, num_layers)
         self.fc = nn.Linear(d_model, vocab_size)
     def forward(self, memory, tgt, tgt_mask=None):
         # memory: [S, B, D], tgt: [T, B]
-        tgt_emb = self.embedding(tgt) + self.pos[:, :tgt.size(0)]
+        tgt_emb = self.embedding(tgt) + self.pos[:tgt.size(0)].unsqueeze(1)
         out = self.transformer(tgt_emb, memory, tgt_mask=tgt_mask)
         return self.fc(out)
 
 class CNNTransformer(nn.Module):
-    def __init__(self, vocab_size):
+    def __init__(self, vocab_size, d_model=256):
         super().__init__()
-        self.encoder = CNNEncoder()
-        self.decoder = TransformerDecoder(vocab_size)
+        self.encoder = CNNEncoder(out_dim=d_model)
+        self.decoder = TransformerDecoder(vocab_size, d_model=d_model)
     def forward(self, images, tgt, tgt_mask=None):
-        # images: [B,1,H,W], tgt: [T,B]
-        memory = self.encoder(images)  # [B, C, H', W']
+        memory = self.encoder(images)  # [B, d_model, H', W']
         B, C, H, W = memory.shape
-        memory = memory.flatten(2).permute(2, 0, 1)  # [S, B, C]
+        memory = memory.flatten(2).permute(2, 0, 1)  # [S, B, d_model]
         return self.decoder(memory, tgt, tgt_mask)
+    
+def collate_fn(batch):
+    imgs, token_ids = zip(*batch)
+    imgs = torch.stack(imgs, 0)
+    # Pad token sequences
+    lengths = [len(t) for t in token_ids]
+    max_len = max(lengths)
+    pad_id = batch[0][1].new_full((1,), fill_value=0)[0].item()  # or use tokenizer.pad_id
+    padded = torch.full((len(token_ids), max_len), tokenizer.pad_id, dtype=torch.long)
+    for i, t in enumerate(token_ids):
+        padded[i, :len(t)] = t
+    return imgs, padded
 
 # Build vocab from all labels, change this to the crohme2019 labels. 
 
@@ -280,7 +291,6 @@ def evaluate(model, loader, tokenizer, criterion, device):
             logits = model(imgs, tgt_in)
             loss = criterion(logits.reshape(-1, logits.size(-1)), tgt_out.reshape(-1))
             total_loss += loss.item()
-            # Accuracy (token-level, ignoring pad)
             preds = logits.argmax(-1)
             mask = (tgt_out != tokenizer.pad_id)
             correct = (preds == tgt_out) & mask
@@ -305,37 +315,37 @@ if __name__ == "__main__":
 
 
     transform = transforms.Compose([
-        transforms.Resize((256, 256)),  # or whatever your model expects
+        transforms.Resize((256, 256)), 
         transforms.ToTensor(),
     ])
 
     train_dataset = MathExprDataset(
-        img_dir=['transformer/data/train/pngs'],
+        img_dir='transformer/data/train/pngs',
         inkml_dir='transformer/data/crohme2019/train',
         tokenizer=tokenizer,
         transform=transform
     )
     val_dataset = MathExprDataset(
-        img_dir=['transformer/data/valid/pngs'],
+        img_dir='transformer/data/valid/pngs',
         inkml_dir='transformer/data/crohme2019/valid',
         tokenizer=tokenizer,
         transform=transform
     )
     test_dataset = MathExprDataset(
-        img_dir=['transformer/data/test/pngs'],
+        img_dir='transformer/data/test/pngs',
         inkml_dir='transformer/data/crohme2019/test',
         tokenizer=tokenizer,
         transform=transform
     )
 
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=None)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
 
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, collate_fn=None)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
 
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True, collate_fn=None)
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
 
-    model = CNNTransformer(len(tokenizer))
+    model = CNNTransformer(len(tokenizer), d_model=256)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model = train(model, train_loader, val_loader, tokenizer, num_epochs=10, lr=1e-4)
