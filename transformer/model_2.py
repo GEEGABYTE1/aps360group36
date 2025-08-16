@@ -145,8 +145,6 @@ class MathExprDataset(Dataset):
     def __len__(self):
         return len(self.img_names)
     def __getitem__(self, idx):
-        import os
-        from latex_extraction import extract_latex_from_inkml
         img_name = self.img_names[idx]
         img_path = os.path.join(self.img_dir, img_name)
         img = Image.open(img_path).convert("L")
@@ -275,6 +273,34 @@ def train(model, train_loader, val_loader, tokenizer, num_epochs=10, lr=1e-4):
     plt.show()
     return model 
 
+def qualitative_test(model, dataset, tokenizer, device, num_samples=5):
+        model.eval()
+        for i in range(num_samples):
+            img, target_ids = dataset[i]
+            img_input = img.unsqueeze(0).to(device)
+            # Greedy decoding
+            generated = [tokenizer.bos_id]
+            for _ in range(100):  # max sequence length
+                inp = torch.tensor(generated, dtype=torch.long, device=device).unsqueeze(1)  # [T, 1]
+                with torch.no_grad():
+                    memory = model.encoder(img_input)
+                    B, C, H, W = memory.shape
+                    memory = memory.flatten(2).permute(2, 0, 1)  # [S, B, d_model]
+                    logits = model.decoder(memory, inp)
+                next_token = logits[-1, 0].argmax().item()
+                if next_token == tokenizer.eos_id:
+                    break
+                generated.append(next_token)
+            pred_latex = tokenizer.decode(generated[1:])  # skip BOS
+            gt_latex = tokenizer.decode(target_ids.tolist())
+            # Show image and print results
+            plt.imshow(img.cpu().squeeze(), cmap='gray')
+            plt.axis('off')
+            plt.title(f"Pred: {pred_latex}\nGT: {gt_latex}")
+            plt.show()
+            print(f"Predicted: {pred_latex}")
+            print(f"Ground Truth: {gt_latex}\n")
+
 def evaluate(model, loader, tokenizer, criterion, device):
     model.eval()
     total_loss = 0
@@ -348,4 +374,7 @@ if __name__ == "__main__":
     model = CNNTransformer(len(tokenizer), d_model=256)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    model = train(model, train_loader, val_loader, tokenizer, num_epochs=10, lr=1e-4)
+    model = train(model, train_loader, val_loader, tokenizer, num_epochs=2, lr=1e-4)
+
+    qualitative_test(model, test_dataset, tokenizer, device, num_samples=5)
+    
